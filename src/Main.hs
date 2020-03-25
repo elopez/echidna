@@ -18,7 +18,8 @@ import EVM.ABI (AbiValue(AbiAddress))
 import Echidna.ABI
 import Echidna.Config
 import Echidna.Solidity
-import Echidna.Campaign
+import Echidna.Types.Campaign
+import Echidna.Campaign (isSuccess)
 import Echidna.UI
 import Echidna.Transaction
 
@@ -55,13 +56,14 @@ main = do Options f c conf <- execParser opts
           g   <- getRandom
           EConfigWithUsage cfg ks _ <- maybe (pure (EConfigWithUsage defaultConfig mempty mempty)) parseConfig conf
           unless (cfg ^. sConf . quiet) $ mapM_ (hPutStrLn stderr . ("Warning: unused option: " ++) . unpack) ks
-          let cd = corpusDir $ view cConf cfg
+          let cd = cfg ^. cConf . corpusDir
+              df = cfg ^. cConf . dictFreq
           txs <- loadTxs cd
           cpg <- flip runReaderT cfg $ do
             cs       <- Echidna.Solidity.contracts f
             ads      <- addresses
             (v,w,ts) <- loadSpecified (pack <$> c) cs >>= prepareForTest
             let ads' = AbiAddress <$> v ^. env . EVM.contracts . to keys
-            ui v w ts (Just $ mkGenDict (dictFreq $ view cConf cfg) (extractConstants cs ++ NE.toList ads ++ ads') [] g (returnTypes cs)) txs
+            ui v w ts (Just $ mkGenDict df (extractConstants cs ++ NE.toList ads ++ ads') [] g (returnTypes cs)) txs
           saveTxs cd (view corpus cpg)
           if not . isSuccess $ cpg then exitWith $ ExitFailure 1 else exitSuccess

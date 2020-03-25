@@ -28,7 +28,8 @@ import UnliftIO (MonadUnliftIO)
 import UnliftIO.Concurrent (forkIO, forkFinally)
 import UnliftIO.Timeout (timeout)
 
-import Echidna.Campaign
+import Echidna.Types.Campaign
+import Echidna.Campaign (campaign)
 import Echidna.ABI
 import Echidna.Solidity
 import Echidna.Test
@@ -77,7 +78,7 @@ ui :: ( MonadCatch m, MonadRandom m, MonadReader x m, MonadUnliftIO m
    -> m Campaign
 ui v w ts d txs = do
   let d' = fromMaybe defaultDict d
-  let getSeed = view $ hasLens . to seed . non (d' ^. defSeed)
+  let getSeed = view $ hasLens . seed . non (d' ^. defSeed)
   bc <- liftIO $ newBChan 100
   ref <- liftIO $ newIORef defaultCampaign
   dash <- liftM2 (&&) isTerminal $ view (hasLens . dashboard)
