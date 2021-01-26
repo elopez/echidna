@@ -42,6 +42,11 @@ import Echidna.Types.Signature (SignatureMap, SolCall, ContractA, FunctionHash)
 import Echidna.Types.Tx
 import Echidna.Types.World (World(..))
 
+hasSelfdestructed :: (MonadState y m, Has VM y) => Addr -> m Bool
+hasSelfdestructed a = do
+  sd <- use $ hasLens . tx . substate . selfdestructs
+  return $ a `elem` sd
+
 -- | If half a tuple is zero, make both halves zero. Useful for generating delays, since block number
 -- only goes up with timestamp
 level :: (Num a, Eq a) => (a, a) -> (a, a)
@@ -53,13 +58,13 @@ getSignatures hmm Nothing = return hmm
 getSignatures hmm (Just lmm) = usuallyVeryRarely hmm lmm -- once in a while, this will use the low-priority signature for the input generation
 
 -- | Generate a random 'Transaction' with either synthesis or mutation of dictionary entries.
-genTxM :: (MonadRandom m, MonadReader x m, Has TxConf x, Has GenDict x, Has World x)
+genTxM :: (MonadRandom m, MonadReader x m, MonadState y m, Has TxConf x, Has World x, Has GenDict y)
   => Map Addr Contract
   -> m Tx
 genTxM m = do
   TxConf _ g gp t b mv <- view hasLens
-  World ss hmm lmm ps <- view hasLens
-  genDict <- view hasLens
+  World ss hmm lmm ps _ <- view hasLens
+  genDict <- use hasLens
   mm <- getSignatures hmm lmm
   let ns = dictValues genDict
   s' <- rElem ss
@@ -94,11 +99,11 @@ genValue mv ds ps sc =
 
 -- | Check if a 'Transaction' is as \"small\" (simple) as possible (using ad-hoc heuristics).
 canShrinkTx :: Tx -> Bool
-canShrinkTx (Tx (SolCreate _) _ _ _ 0 0 (0, 0))   = False
-canShrinkTx (Tx (SolCall (_,l)) _ _ _ 0 0 (0, 0)) = any canShrinkAbiValue l
-canShrinkTx (Tx (SolCalldata _) _ _ _ 0 0 (0, 0)) = False
-canShrinkTx (Tx NoCall _ _ _ _ _ (0, 0))          = False
-canShrinkTx _                                     = True
+canShrinkTx (Tx solcall _ _ _ 0 0 (0, 0)) =
+  case solcall of
+    SolCall (_, l) -> any canShrinkAbiValue l
+    _ -> False
+canShrinkTx _ = True
 
 removeCallTx :: Tx -> Tx
 removeCallTx (Tx _ _ r _ _ _ d) = Tx NoCall 0 r 0 0 0 d
@@ -108,10 +113,8 @@ removeCallTx (Tx _ _ r _ _ _ d) = Tx NoCall 0 r 0 0 0 d
 shrinkTx :: MonadRandom m => Tx -> m Tx
 shrinkTx tx'@(Tx c _ _ _ gp (C _ v) (C _ t, C _ b)) = let
   c' = case c of
-            SolCreate{}   -> pure c
-            SolCall sc    -> SolCall <$> shrinkAbiCall sc
-            SolCalldata{} -> pure c
-            NoCall        -> pure c
+         SolCall sc -> SolCall <$> shrinkAbiCall sc
+         _ -> pure c
   lower 0 = pure $ w256 0
   lower x = w256 . fromIntegral <$> getRandomR (0 :: Integer, fromIntegral x)
               >>= \r -> uniform [0, r] -- try 0 quicker
@@ -138,7 +141,7 @@ liftSH = stateST . runState . zoom hasLens
 -- 'Transaction's \"on-chain\".
 setupTx :: (MonadState x m, Has VM x) => Tx -> m ()
 setupTx (Tx NoCall _ r _ _ _ (t, b)) = liftSH . sequence_ $
-  [ result .= Nothing, state . pc .= 0, state . stack .= mempty, state . memory .= mempty
+  [ state . pc .= 0, state . stack .= mempty, state . memory .= mempty
   , block . timestamp += litWord t, block . number += b, loadContract r]
 
 setupTx (Tx c s r g gp v (t, b)) = liftSH . sequence_ $
