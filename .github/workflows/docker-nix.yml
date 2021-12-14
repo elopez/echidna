@@ -30,6 +30,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Docker Package and Version
+        id: versions
         run: |
           set +e
           _=$(echo "$GITHUB_REF" | grep "^refs/heads/")
@@ -51,8 +52,8 @@ jobs:
             PKG=echidna
           fi
           set -e
-          echo "PKG=$PKG" >> $GITHUB_ENV
-          echo "VER=$VER" >> $GITHUB_ENV
+          echo "::set-output name=PKG::$PKG"
+          echo "::set-output name=VER::$VER"
 
       - name: Build and push
         uses: docker/build-push-action@v2
@@ -61,4 +62,4 @@ jobs:
           file: Dockerfile.nix
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/$GITHUB_REPOSITORY/$PKG:$VER
+          tags: ghcr.io/${{ github.repository }}/${{ steps.versions.outputs.PKG }}:${{ steps.versions.outputs.VER }}
