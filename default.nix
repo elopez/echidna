@@ -2,7 +2,7 @@ let
   overlays = [(final: prev:
     # libff doesn't build on aarch64 with the default options
     # TODO: upstream this to nixpkgs and remove the overlay
-    if prev.stdenv.system == "aarch64-darwin" then {
+    if prev.stdenv.system == "aarch64-darwin" || prev.stdenv.system == "aarch64-linux" then {
       libff = prev.libff.overrideAttrs (old: {
         cmakeFlags = old.cmakeFlags ++ ["-DCURVE=ALT_BN128" "-DUSE_ASM=OFF"];
       });
@@ -75,7 +75,7 @@ let
         shellHook = "hpack";
         license = pkgs.lib.licenses.agpl3;
         doHaddock = false;
-        doCheck = true;
+        doCheck = pkgs.stdenv.hostPlatform == pkgs.stdenv.buildPlatform && pkgs.stdenv.hostPlatform.isx86;
       };
 
   # some overrides required to build hevm on aarch64, this should disappear in the future
@@ -108,7 +108,7 @@ let
     };
   };
 
-  haskellPackages = if pkgs.stdenv.system == "aarch64-darwin"
+  haskellPackages = if pkgs.stdenv.system == "aarch64-darwin" || pkgs.stdenv.system == "aarch64-linux"
     then aarch64HaskellPackages
     else pkgs.haskellPackages;
 
@@ -118,7 +118,7 @@ let
     buildInputs = with haskellPackages; [
       hlint
       cabal-install
-    ] ++ pkgs.lib.optional (pkgs.stdenv.system != "aarch64-darwin") [
+    ] ++ pkgs.lib.optional (pkgs.stdenv.system != "aarch64-darwin" && pkgs.stdenv.system != "aarch64-linux") [
       # this doesn't work due to ormolu not building
       haskell-language-server
     ];
