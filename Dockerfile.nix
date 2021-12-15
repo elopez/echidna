@@ -32,7 +32,7 @@ ENV \
 COPY . /echidna/
 WORKDIR /echidna
 
-RUN NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM=1 nix-build default.nix
+RUN NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM=1 nix-build default.nix --cores 2 --max-jobs 2
 
 RUN apk add --no-cache --update py3-pip \
   && pip install --no-cache exodus-bundler
