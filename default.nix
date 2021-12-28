@@ -1,8 +1,8 @@
 let
   pkgs = import (builtins.fetchTarball {
-    name = "nixpkgs-unstable-2021-12-15";
-    url = "https://github.com/nixos/nixpkgs/archive/52e7900640b28d13fb8996a38ffa368ea089d1eb.tar.gz";
-    sha256 = "sha256:1109dp47lk7cn5xpfbsbmc9xsq0kmzs2k705yqz3lzs05b2fkaxd";
+    name = "nixpkgs-unstable-2021-12-27";
+    url = "https://github.com/nixos/nixpkgs/archive/0736e7e3a90fb6d2ff6e11c077918220a253c9bc.tar.gz";
+    sha256 = "sha256:064n57hjwwz1q4jn7zim3vnwgw2kpsyr2x6mfhfcaxjkd22gwkqi";
   }) { };
 
   # this is not perfect for development as it hardcodes solc to 0.5.7, test suite runs fine though
@@ -68,30 +68,10 @@ let
         doCheck = true;
       };
 
-  # some overrides required to build hevm on aarch64, this should disappear in the future
-  aarch64HaskellPackages = pkgs.haskellPackages.override {
-    overrides = self: super: {
-      # the hackage version doesn't build on aarch64-darwin, master is fixed
-      # TODO: remove this after libBF is bumped to the next version
-      libBF = super.libBF.overrideAttrs (old: {
-        src = pkgs.fetchFromGitHub {
-          owner = "GaloisInc";
-          repo = "libBF-hs";
-          rev = "ebc09dc6536eefd6bd72bdbe125b0ff79bb118fe";
-          sha256 = "sha256-GlHU163TzuPsYzUlA129RPz8HDDlslrE7PF7ybnAPR0=";
-        };
-      });
-    };
-  };
-
-  haskellPackages = if pkgs.stdenv.isAarch64
-    then aarch64HaskellPackages
-    else pkgs.haskellPackages;
-
-  echidna = haskellPackages.callPackage f { };
-  echidnaShell = haskellPackages.shellFor {
+  echidna = pkgs.haskellPackages.callPackage f { };
+  echidnaShell = pkgs.haskellPackages.shellFor {
     packages = p: [ echidna ];
-    buildInputs = with haskellPackages; [
+    buildInputs = with pkgs.haskellPackages; [
       hlint
       cabal-install
     ] ++ pkgs.lib.optional (!pkgs.stdenv.isAarch64) [
