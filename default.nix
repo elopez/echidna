@@ -65,7 +65,7 @@ let
         shellHook = "hpack";
         license = pkgs.lib.licenses.agpl3;
         doHaddock = false;
-        doCheck = true;
+        doCheck = pkgs.stdenv.hostPlatform == pkgs.stdenv.buildPlatform && pkgs.stdenv.hostPlatform.isx86;
       };
 
   echidna = pkgs.haskellPackages.callPackage f { };
