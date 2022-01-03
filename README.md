@@ -51,7 +51,7 @@ An example contract with tests can be found [examples/solidity/basic/flags.sol](
 $ echidna-test examples/solidity/basic/flags.sol
 ```
 
-Echidna should find a a call sequence that falisfies `echidna_sometimesfalse` and should be unable to find a falsifying input for `echidna_alwaystrue`.
+Echidna should find a a call sequence that falsifies `echidna_sometimesfalse` and should be unable to find a falsifying input for `echidna_alwaystrue`.
 
 ### Collecting and visualizing coverage
 
@@ -151,6 +151,13 @@ gas usage was achieved, and also not too important. These interfaces are
 subject to change to be slightly more user friendly at a later date. `testType`
 will either be `property` or `assertion`, and `status` always takes on either
 `fuzzing`, `shrinking`, `solved`, `passed`, or `error`.
+
+### Using Echidna in a GitHub Actions workflow
+
+There is an Echidna action which can be used to run `echidna-test` as part of a
+GitHub Actions workflow. Please refer to the
+[crytic/echidna-action](https://github.com/crytic/echidna-action) repository for
+usage instructions and examples.
 
 ## Limitations and known issues
 
