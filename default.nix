@@ -1,8 +1,8 @@
 let
   pkgs = import (builtins.fetchTarball {
-    name = "nixpkgs-unstable-2022-01-01";
-    url = "https://github.com/nixos/nixpkgs/archive/0fd74961da9fe2640ad2fbd960c3af08246e6749.tar.gz";
-    sha256 = "sha256:18zjg115crlk2yz5ghmswgnnjdcz87frqk1p0g7ygh1q0flp87z3";
+    name = "nixpkgs-unstable-2022-01-07";
+    url = "https://github.com/nixos/nixpkgs/archive/d77bbfcbb650d9c219ca3286e1efb707b922d7c2.tar.gz";
+    sha256 = "sha256:1wh9qr6wvnfaprws2kbm4n9wxbckzh5d33lc4xfk6ama9bhbxr92";
   }) { };
 
   # this is not perfect for development as it hardcodes solc to 0.5.7, test suite runs fine though
