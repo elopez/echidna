@@ -1,8 +1,8 @@
 let
   pkgs = import (builtins.fetchTarball {
-    name = "nixpkgs-unstable-2021-12-27";
-    url = "https://github.com/nixos/nixpkgs/archive/0736e7e3a90fb6d2ff6e11c077918220a253c9bc.tar.gz";
-    sha256 = "sha256:064n57hjwwz1q4jn7zim3vnwgw2kpsyr2x6mfhfcaxjkd22gwkqi";
+    name = "nixpkgs-unstable-2022-01-07";
+    url = "https://github.com/nixos/nixpkgs/archive/d77bbfcbb650d9c219ca3286e1efb707b922d7c2.tar.gz";
+    sha256 = "sha256:1wh9qr6wvnfaprws2kbm4n9wxbckzh5d33lc4xfk6ama9bhbxr92";
   }) { };
 
   # this is not perfect for development as it hardcodes solc to 0.5.7, test suite runs fine though
@@ -26,8 +26,6 @@ let
       chmod +x $out/bin/solc
     '';
   };
-
-  slither-analyzer = pkgs.slither-analyzer.override { withSolc = false; };
 
   v = "1.7.3";
 
@@ -55,8 +53,8 @@ let
         ] ++ (if pkgs.lib.inNixShell then testHaskellDepends else []);
         executableHaskellDepends = libraryHaskellDepends;
         testHaskellDepends = [ tasty tasty-hunit tasty-quickcheck ];
-        libraryToolDepends = [ hpack slither-analyzer solc ];
-        testToolDepends = [ slither-analyzer solc ];
+        libraryToolDepends = [ hpack pkgs.slither-analyzer solc ];
+        testToolDepends = [ pkgs.slither-analyzer solc ];
         preConfigure = ''
           hpack
           # re-enable dynamic build for Linux
