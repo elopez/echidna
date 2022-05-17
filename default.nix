@@ -7,22 +7,6 @@
   tests ? true
 }:
 let
-  overlays = [(final: prev:
-    # libff doesn't build on aarch64 with the default options
-    # TODO: upstream this to nixpkgs and remove the overlay
-    if prev.stdenv.system == "aarch64-darwin" || prev.stdenv.system == "aarch64-linux" then {
-      libff = prev.libff.overrideAttrs (old: {
-        cmakeFlags = old.cmakeFlags ++ ["-DCURVE=ALT_BN128" "-DUSE_ASM=OFF"];
-      });
-    } else {}
-  )];
-
-  pkgs = import (builtins.fetchTarball {
-    name = "nixpkgs-unstable-2021-12-08";
-    url = "https://github.com/nixos/nixpkgs/archive/f225322e3bea8638304adfcf415cd11de99f2208.tar.gz";
-    sha256 = "sha256:1cbl7w81h2m4as15z094jkcrgg2mdi2wnkzg2dhd6080vgic11vy";
-  }) { inherit overlays; };
-
   # this is not perfect for development as it hardcodes solc to 0.5.7, test suite runs fine though
   # would be great to integrate solc-select to be more flexible, improve this in future
   solc = pkgs.stdenv.mkDerivation {
