@@ -1,9 +1,9 @@
 { tests ? false }:
 let
   pkgs = import (builtins.fetchTarball {
-    name = "nixpkgs-unstable-2022-02-10";
-    url = "https://github.com/nixos/nixpkgs/archive/1882c6b7368fd284ad01b0a5b5601ef136321292.tar.gz";
-    sha256 = "sha256:0zg7ak2mcmwzi2kg29g4v9fvbvs0viykjsg2pwaphm1fi13s7s0i";
+    name = "nixpkgs-unstable-2022-05-17";
+    url = "https://github.com/nixos/nixpkgs/archive/0e78d578e643f353d6db74a8514bab28099760dc.tar.gz";
+    sha256 = "sha256:08xl0wcl4rn2zkdn0wfdrp0bcs5zjdbib84324cxg0vxvg114lb4";
   }) {};
   echidna = import ./. { inherit tests; };
 in
