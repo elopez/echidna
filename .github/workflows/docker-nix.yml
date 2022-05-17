@@ -6,6 +6,7 @@ on:
       - master
       - github-docker
       - nix-docker
+      - nix-docker-3
     tags:
       - '*'
 
