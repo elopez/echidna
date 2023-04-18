@@ -97,6 +97,9 @@ instance FromJSON EConfigWithUsage where
         <*> v ..:? "coverageFormats" ..!= [Txt,Html,Lcov]
         <*> v ..:? "workers"
         <*> v ..:? "server"
+        <*> v ..:? "symExec"         ..!= False
+        <*> v ..:? "symExecTimeout"  ..!= defaultSymExecTimeout
+        <*> v ..:? "symExecNSolvers" ..!= defaultSymExecNWorkers
 
       solConfParser = SolConf
         <$> v ..:? "contractAddr"    ..!= defaultContractAddr
