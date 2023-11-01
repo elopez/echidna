@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - docker-multiplatform
     tags:
       - '*'
 
