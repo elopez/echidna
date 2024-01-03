@@ -28,9 +28,6 @@ jobs:
           - os: macos-latest
             name: macOS (x86_64)
             tuple: x86_64-macos
-          - os: macos-latest-xlarge
-            name: macOS (aarch64)
-            tuple: aarch64-macos
     steps:
       - name: Checkout
         uses: actions/checkout@v4
