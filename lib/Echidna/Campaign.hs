@@ -1,8 +1,7 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE DataKinds #-}
 
 module Echidna.Campaign where
-
-import Optics.Core hiding ((|>))
 
 import Control.Concurrent (writeChan)
 import Control.DeepSeq (force)
@@ -12,10 +11,11 @@ import Control.Monad.Random.Strict (MonadRandom, RandT, evalRandT)
 import Control.Monad.Reader (MonadReader, asks, liftIO, ask)
 import Control.Monad.State.Strict
   (MonadState(..), StateT(..), gets, MonadIO, modify')
+import Control.Monad.ST (RealWorld)
 import Control.Monad.Trans (lift)
 import Data.Binary.Get (runGetOrFail)
 import Data.ByteString.Lazy qualified as LBS
-import Data.IORef (readIORef, writeIORef, atomicModifyIORef')
+import Data.IORef (readIORef, atomicModifyIORef')
 import Data.Map qualified as Map
 import Data.Map (Map, (\\))
 import Data.Maybe (isJust, mapMaybe, fromMaybe)
@@ -24,24 +24,23 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import System.Random (mkStdGen)
 
-import EVM (bytecode, cheatCode)
+import EVM (cheatCode)
 import EVM.ABI (getAbi, AbiType(AbiAddressType), AbiValue(AbiAddress))
 import EVM.Types hiding (Env, Frame(state))
 
 import Echidna.ABI
 import Echidna.Exec
-import Echidna.Events (extractEvents)
 import Echidna.Mutator.Corpus
 import Echidna.Shrink (shrinkTest)
+import Echidna.Symbolic (forceAddr)
 import Echidna.Test
 import Echidna.Transaction
 import Echidna.Types (Gas)
-import Echidna.Types.Buffer (forceBuf)
 import Echidna.Types.Campaign
 import Echidna.Types.Corpus (Corpus, corpusSize)
 import Echidna.Types.Coverage (scoveragePoints)
 import Echidna.Types.Config
-import Echidna.Types.Signature (makeBytecodeCache, FunctionName)
+import Echidna.Types.Signature (FunctionName)
 import Echidna.Types.Test
 import Echidna.Types.Test qualified as Test
 import Echidna.Types.Tx (TxCall(..), Tx(..), call)
@@ -62,7 +61,7 @@ isSuccessful =
 -- contain minized corpus without sequences that didn't increase the coverage.
 replayCorpus
   :: (MonadIO m, MonadThrow m, MonadRandom m, MonadReader Env m, MonadState WorkerState m)
-  => VM     -- ^ VM to start replaying from
+  => VM RealWorld -- ^ VM to start replaying from
   -> [[Tx]] -- ^ corpus to replay
   -> m ()
 replayCorpus vm txSeqs =
@@ -74,10 +73,10 @@ replayCorpus vm txSeqs =
 -- optional dictionary to generate calls with. Return the 'Campaign' state once
 -- we can't solve or shrink anything.
 runWorker
-  :: (MonadIO m, MonadThrow m, MonadRandom m, MonadReader Env m)
+  :: (MonadIO m, MonadThrow m, MonadReader Env m)
   => StateT WorkerState m ()
   -- ^ Callback to run after each state update (for instrumentation)
-  -> VM      -- ^ Initial VM state
+  -> VM RealWorld -- ^ Initial VM state
   -> World   -- ^ Initial world state
   -> GenDict -- ^ Generation dictionary
   -> Int     -- ^ Worker id starting from 0
@@ -85,11 +84,6 @@ runWorker
   -> Int     -- ^ Test limit for this worker
   -> m (WorkerStopReason, WorkerState)
 runWorker callback vm world dict workerId initialCorpus testLimit = do
-  metaCacheRef <- asks (.metadataCache)
-  fetchContractCacheRef <- asks (.fetchContractCache)
-  external <- liftIO $ Map.mapMaybe id <$> readIORef fetchContractCacheRef
-  liftIO $ writeIORef metaCacheRef (mkMemo (vm.env.contracts <> external))
-
   let
     effectiveSeed = dict.defSeed + workerId
     effectiveGenDict = dict { defSeed = effectiveSeed }
@@ -150,29 +144,25 @@ runWorker callback vm world dict workerId initialCorpus testLimit = do
 
   continue = runUpdate (shrinkTest vm) >> lift callback >> run
 
-  mkMemo = makeBytecodeCache . map (forceBuf . (^. bytecode)) . Map.elems
-
 -- | Generate a new sequences of transactions, either using the corpus or with
 -- randomly created transactions
 randseq
   :: (MonadRandom m, MonadReader Env m, MonadState WorkerState m, MonadIO m)
-  => Map Addr Contract
+  => Map (Expr 'EAddr) Contract
   -> World
   -> m [Tx]
 randseq deployedContracts world = do
   env <- ask
-  memo <- liftIO $ readIORef env.metadataCache
 
   let
     mutConsts = env.cfg.campaignConf.mutConsts
-    txConf = env.cfg.txConf
     seqLen = env.cfg.campaignConf.seqLen
 
   -- TODO: include reproducer when optimizing
   --let rs = filter (not . null) $ map (.testReproducer) $ ca._tests
 
   -- Generate new random transactions
-  randTxs <- replicateM seqLen (genTx memo world txConf deployedContracts)
+  randTxs <- replicateM seqLen (genTx world deployedContracts)
   -- Generate a random mutator
   cmut <- if seqLen == 1 then seqMutatorsStateless (fromConsts mutConsts)
                          else seqMutatorsStateful (fromConsts mutConsts)
@@ -187,9 +177,9 @@ randseq deployedContracts world = do
 -- minimized. Stores any useful data in the campaign state if coverage increased.
 callseq
   :: (MonadIO m, MonadThrow m, MonadRandom m, MonadReader Env m, MonadState WorkerState m)
-  => VM
+  => VM RealWorld
   -> [Tx]
-  -> m VM
+  -> m (VM RealWorld)
 callseq vm txSeq = do
   env <- ask
   -- First, we figure out whether we need to execute with or without coverage
@@ -224,7 +214,7 @@ callseq vm txSeq = do
       -- compute the addresses not present in the old VM via set difference
       newAddrs = Map.keys $ vm'.env.contracts \\ vm.env.contracts
       -- and construct a set to union to the constants table
-      diffs = Map.fromList [(AbiAddressType, Set.fromList $ AbiAddress <$> newAddrs)]
+      diffs = Map.fromList [(AbiAddressType, Set.fromList $ AbiAddress . forceAddr <$> newAddrs)]
       -- Now we try to parse the return values as solidity constants, and add them to 'GenDict'
       resultMap = returnValues (map (\(t, (vr, _)) -> (t, vr)) results) workerState.genDict.rTypes
       -- union the return results with the new addresses
@@ -257,7 +247,7 @@ callseq vm txSeq = do
   -- know the return type for each function called. If yes, tries to parse the
   -- return value as a value of that type. Returns a 'GenDict' style Map.
   returnValues
-    :: [(Tx, VMResult)]
+    :: [(Tx, VMResult RealWorld)]
     -> (FunctionName -> Maybe AbiType)
     -> Map AbiType (Set AbiValue)
   returnValues txResults returnTypeOf =
@@ -270,13 +260,13 @@ callseq vm txSeq = do
           type' <- returnTypeOf fname
           case runGetOrFail (getAbi type') (LBS.fromStrict buf) of
             -- make sure we don't use cheat codes to form fuzzing call sequences
-            Right (_, _, abiValue) | abiValue /= AbiAddress cheatCode ->
+            Right (_, _, abiValue) | abiValue /= AbiAddress (forceAddr cheatCode) ->
               Just (type', Set.singleton abiValue)
             _ -> Nothing
         _ -> Nothing
 
   -- | Add transactions to the corpus discarding reverted ones
-  addToCorpus :: Int -> [(Tx, (VMResult, Gas))] -> Corpus -> Corpus
+  addToCorpus :: Int -> [(Tx, (VMResult RealWorld, Gas))] -> Corpus -> Corpus
   addToCorpus n res corpus =
     if null rtxs then corpus else Set.insert (n, rtxs) corpus
     where rtxs = fst <$> res
@@ -285,8 +275,8 @@ callseq vm txSeq = do
 -- executed, saving the transaction if it finds new coverage.
 execTxOptC
   :: (MonadIO m, MonadReader Env m, MonadState WorkerState m, MonadThrow m)
-  => VM -> Tx
-  -> m ((VMResult, Gas), VM)
+  => VM RealWorld -> Tx
+  -> m ((VMResult RealWorld, Gas), VM RealWorld)
 execTxOptC vm tx = do
   ((res, grew), vm') <- runStateT (execTxWithCov tx) vm
   when grew $ do
@@ -301,7 +291,7 @@ execTxOptC vm tx = do
 -- | Given current `gasInfo` and a sequence of executed transactions, updates
 -- information on highest gas usage for each call
 updateGasInfo
-  :: [(Tx, (VMResult, Gas))]
+  :: [(Tx, (VMResult RealWorld, Gas))]
   -> [Tx]
   -> Map Text (Gas, [Tx])
   -> Map Text (Gas, [Tx])
@@ -322,10 +312,10 @@ updateGasInfo ((t, _):ts) tseq gi = updateGasInfo ts (t:tseq) gi
 -- known solves.
 evalSeq
   :: (MonadIO m, MonadThrow m, MonadRandom m, MonadReader Env m, MonadState WorkerState m)
-  => VM -- ^ Initial VM
-  -> (VM -> Tx -> m (result, VM))
+  => VM RealWorld -- ^ Initial VM
+  -> (VM RealWorld -> Tx -> m (result, VM RealWorld))
   -> [Tx]
-  -> m ([(Tx, result)], VM)
+  -> m ([(Tx, result)], VM RealWorld)
 evalSeq vm0 execFunc = go vm0 [] where
   go vm executedSoFar toExecute = do
     -- NOTE: we do reverse here because we build up this list by prepending,
@@ -365,19 +355,17 @@ runUpdate f = do
 -- Then update accordingly, keeping track of how many times we've tried to solve or shrink.
 updateTest
   :: (MonadIO m, MonadThrow m, MonadRandom m, MonadReader Env m, MonadState WorkerState m)
-  => VM
-  -> (VM, [Tx])
+  => VM RealWorld
+  -> (VM RealWorld, [Tx])
   -> EchidnaTest
   -> m (Maybe EchidnaTest)
 updateTest vmForShrink (vm, xs) test = do
-  dappInfo <- asks (.dapp)
   case test.state of
     Open -> do
       (testValue, vm') <- checkETest test vm
       let
-        events = extractEvents False dappInfo vm'
         results = getResultFromVM vm'
-        test' = updateOpenTest test xs (testValue, events, results)
+        test' = updateOpenTest test xs (testValue, vm', results)
       case test'.state of
         Large _ -> do
           pushEvent (TestFalsified test')

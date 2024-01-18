@@ -18,13 +18,13 @@ import Data.IORef (newIORef, readIORef)
 import Data.List.NonEmpty qualified as NE
 import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, fromJust)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Time.Clock.System (getSystemTime, systemSeconds)
 import Data.Vector qualified as Vector
 import Data.Version (showVersion)
-import Data.Word (Word8)
+import Data.Word (Word8, Word16)
 import Main.Utf8 (withUtf8)
 import Options.Applicative
 import Paths_echidna (version)
@@ -41,7 +41,7 @@ import EVM.Types (Addr, Contract(..), keccak', W256)
 
 import Echidna
 import Echidna.Config
-import Echidna.Types.Buffer (forceBuf)
+import Echidna.Symbolic (forceBuf)
 import Echidna.Types.Campaign
 import Echidna.Types.Config
 import Echidna.Types.Solidity
@@ -89,7 +89,7 @@ main = withUtf8 $ withCP65001 $ do
   buildOutputs <- compileContracts cfg.solConf cliFilePath
   cacheContractsRef <- newIORef $ fromMaybe mempty loadedContractsCache
   cacheSlotsRef <- newIORef $ fromMaybe mempty loadedSlotsCache
-  cacheMetaRef <- newIORef mempty
+  codehashMap <- newIORef mempty
   chainId <- RPC.fetchChainId cfg.rpcUrl
   eventQueue <- newChan
   coverageRef <- newIORef mempty
@@ -102,7 +102,7 @@ main = withUtf8 $ withCP65001 $ do
     env = Env { cfg
                 -- TODO put in real path
               , dapp = dappInfo "/" buildOutput
-              , metadataCache = cacheMetaRef
+              , codehashMap = codehashMap
               , fetchContractCache = cacheContractsRef
               , fetchSlotCache = cacheSlotsRef
               , chainId = chainId
@@ -183,7 +183,7 @@ main = withUtf8 $ withCP65001 $ do
   -- code fetched from the outside
   externalSolcContract :: Addr -> Contract -> IO (Maybe (SourceCache, SolcContract))
   externalSolcContract addr c = do
-    let runtimeCode = forceBuf $ view bytecode c
+    let runtimeCode = forceBuf $ fromJust $ view bytecode c
     putStr $ "Fetching Solidity source for contract at address " <> show addr <> "... "
     srcRet <- Etherscan.fetchContractSource addr
     putStrLn $ if isJust srcRet then "Success!" else "Error!"
@@ -225,6 +225,7 @@ readFileIfExists path = do
 data Options = Options
   { cliFilePath         :: NE.NonEmpty FilePath
   , cliWorkers          :: Maybe Word8
+  , cliServerPort       :: Maybe Word16
   , cliSelectedContract :: Maybe Text
   , cliConfigFilepath   :: Maybe FilePath
   , cliOutputFormat     :: Maybe OutputFormat
@@ -255,6 +256,9 @@ options = Options
   <*> optional (option auto $ long "workers"
     <> metavar "N"
     <> help "Number of workers to run")
+  <*> optional (option auto $ long "server"
+    <> metavar "PORT"
+    <> help "Run events server on the given port")
   <*> optional (option str $ long "contract"
     <> metavar "CONTRACT"
     <> help "Contract to analyze")
@@ -339,6 +343,7 @@ overrideConfig config Options{..} = do
       , seqLen = fromMaybe campaignConf.seqLen cliSeqLen
       , seed = cliSeed <|> campaignConf.seed
       , workers = cliWorkers <|> campaignConf.workers
+      , serverPort = cliServerPort <|> campaignConf.serverPort
       }
 
     overrideSolConf solConf = solConf
@@ -350,4 +355,3 @@ overrideConfig config Options{..} = do
       , testMode = maybe solConf.testMode validateTestMode cliTestMode
       , allContracts = cliAllContracts || solConf.allContracts
       }
-
