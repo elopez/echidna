@@ -1,6 +1,5 @@
 module Tests.Symbolic (symbolicTests) where
 
-import System.Info (os)
 import Test.Tasty (TestTree, testGroup)
 import Common (testContract', solved, passed)
 import Echidna.Types.Campaign (WorkerType(..))
