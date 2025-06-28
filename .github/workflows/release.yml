@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - haskell-nix
     tags:
       - "v*"
   pull_request:
@@ -19,18 +20,25 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             name: Linux (x86_64)
             tuple: x86_64-linux
-            timeout: 180
+            timeout: 600
+          - os: ubuntu-latest
+            name: Windows (x86_64)
+            tuple: x86_64-windows
+            timeout: 600
           - os: macos-13
             name: macOS (x86_64)
             tuple: x86_64-macos
+            timeout: 600
           - os: macos-14
             name: macOS (aarch64)
             tuple: aarch64-macos
+            timeout: 600
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,12 +65,20 @@ jobs:
           GIT_SHA: ${{ github.sha }}
 
       - name: Build dynamic echidna
+        if: matrix.tuple != 'x86_64-windows'
         run: |
-          nix build .#echidna
+          nix build --accept-flake-config .#echidna
 
-      - name: Build redistributable echidna
+      - name: Build redistributable echidna (Windows)
+        if: matrix.tuple == 'x86_64-windows'
         run: |
-          nix build .#echidna-redistributable --out-link redistributable
+          nix build --accept-flake-config .#echidna-windows --out-link redistributable
+          tar -czf "echidna-${{ steps.version.outputs.version }}-${{ matrix.tuple }}.tar.gz" -C ./redistributable/bin/ echidna.exe
+
+      - name: Build redistributable echidna (other OSes)
+        if: matrix.tuple != 'x86_64-windows'
+        run: |
+          nix build --accept-flake-config .#echidna-redistributable --out-link redistributable
           tar -czf "echidna-${{ steps.version.outputs.version }}-${{ matrix.tuple }}.tar.gz" -C ./redistributable/bin/ echidna
 
       - name: Upload artifact
