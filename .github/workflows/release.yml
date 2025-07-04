@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - ci-test
     tags:
       - "v*"
   pull_request:
@@ -74,6 +75,50 @@ jobs:
         with:
           name: echidna-redistributable-${{ matrix.tuple }}
           path: echidna-${{ steps.version.outputs.version }}-${{ matrix.tuple }}.tar.gz
+
+  nixTest:
+    name: Test with solc ${{ matrix.solc }} on ${{ matrix.name }}
+    timeout-minutes: ${{ matrix.timeout || 30 }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    continue-on-error: ${{ matrix.experimental || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        tuple: ["x86_64-linux", "x86_64-macos", "aarch64-macos"]
+        solc: ["0.4.25", "0.5.7", "0.6.12", "0.7.5"]
+        include:
+          - solc: "0.6.12"
+            experimental: true
+          - solc: "0.7.5"
+            experimental: true
+          - os: ubuntu-latest
+            name: Linux (x86_64)
+            tuple: x86_64-linux
+            timeout: 180
+          - os: macos-13
+            name: macOS (x86_64)
+            tuple: x86_64-macos
+          - os: macos-14
+            name: macOS (aarch64)
+            tuple: aarch64-macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+
+      - name: Configure Cachix
+        uses: cachix/cachix-action@v16
+        with:
+          name: trailofbits
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Run tests
+        run: |
+          nix develop .#ci --command ci-test ${{ matrix.solc }}
 
   release:
     name: Create release

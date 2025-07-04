@@ -63,7 +63,7 @@
           ]);
 
         echidna = pkgs: with pkgs; lib.pipe
-          (haskellPackages.callCabal2nix "echidna" ./. { hevm = hevm pkgs; })
+          (haskellPackages.callCabal2nix "echidna" (lib.cleanSource ./.) { hevm = hevm pkgs; })
           ([
             # FIXME: figure out solc situation, it conflicts with the one from
             # solc-select that is installed with slither, disable tests in the meantime
@@ -171,6 +171,28 @@
               slither-analyzer
               foundry.defaultPackage.${system}
               z3
+              bitwuzla
+            ];
+          };
+
+          ci = mkShell {
+            packages = [
+              slither-analyzer
+              z3
+              bitwuzla
+              (pkgs.writeScriptBin "ci-test" ''
+                solc-select use "$1" --always-install
+                cabal test
+              '')
+            ];
+            shellHook = ''
+              hpack
+            '';
+            inputsFrom = [ (echidna pkgs).env ];
+            buildInputs = [
+              libff
+              secp256k1
+              haskellPackages.cabal-install
             ];
           };
         };
