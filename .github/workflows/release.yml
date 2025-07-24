@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - master
+      - unsafe-hevm
     tags:
       - "v*"
   pull_request:
