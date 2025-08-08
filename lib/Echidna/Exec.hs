@@ -43,6 +43,7 @@ import Echidna.Types.Coverage (CoverageInfo)
 import Echidna.Types.Solidity (SolConf(..))
 import Echidna.Types.Tx (TxCall(..), Tx(call, dst), TxResult(..), initialTimestamp, initialBlockNumber, getResult)
 import Echidna.Utility (getTimestamp, timePrefix)
+import Data.Time (getCurrentTime, diffUTCTime)
 
 -- | Broad categories of execution failures: reversions, illegal operations, and ???.
 data ErrorClass = RevertE | IllegalE | UnknownE
@@ -96,7 +97,19 @@ execTxWith executeTx tx = do
     case tx.call of
       NoCall -> pure $ VMSuccess (ConcreteBuf "")
       _ -> do
+        -- Start timing the transaction execution
+        startTime <- liftIO getCurrentTime
         vmResult <- runFully
+        endTime <- liftIO getCurrentTime
+        let executionTime = diffUTCTime endTime startTime
+            txInfo = case tx.call of
+              SolCall (fname, args) -> "call " ++ T.unpack fname ++ "(" ++ show args ++ ")"
+              SolCreate bytecode -> "create contract (" ++ show (BS.length bytecode) ++ " bytes)"
+              NoCall -> "no-op"
+        -- Always log execution time, with warning if over 0.1 second
+        if executionTime > 0.1
+          then logMsg $ "WARNING: Transaction execution took " ++ show executionTime ++ " (> 0.1s) - " ++ txInfo
+          else logMsg $ "Transaction execution took " ++ show executionTime ++ " - " ++ txInfo
         handleErrorsAndConstruction vmResult vmBeforeTx
         fromEVM clearTStorages
         pure vmResult
