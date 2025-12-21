@@ -87,7 +87,7 @@
           chmod 555 "$exe"
         '';
 
-        echidna' = { staticBuild ? false }: {
+        echidna' = { staticBuild ? false }: pkgs: {
           inherit compiler-nix-name;
           src = pkgs.haskell-nix.haskellLib.cleanGit {
             name = "echidna";
@@ -123,8 +123,10 @@
         echidna = echidna' {};
         echidnaStatic = echidna' { staticBuild = true; };
 
-        hsPkgs = pkgs.haskell-nix.project echidna;
-        hsStaticPkgs = pkgs.haskell-nix.project echidnaStatic;
+        mkEchidna = pkgs: echidna: pkgs.haskell-nix.project (echidna pkgs);
+        hsPkgs = mkEchidna pkgs echidna;
+        hsStaticPkgs = mkEchidna pkgs echidnaStatic;
+        
         #flake = hsPkgs.flake {};
       in
         let
@@ -136,9 +138,9 @@
 
           linuxCrossPackages = let
             # using aarch64-multiplatform-musl here, gives us fully static binaries.
-            aarch64-musl = pkgs.pkgsCross.aarch64-multiplatform-musl.haskell-nix.project echidna;
-            x86_64-musl = pkgs.pkgsCross.musl64.haskell-nix.project echidna;
-            x86_64-windows = pkgs.pkgsCross.ucrt64.haskell-nix.project echidna;
+            aarch64-musl = mkEchidna pkgs.pkgsCross.aarch64-multiplatform-musl echidna;
+            x86_64-musl = mkEchidna pkgs.pkgsCross.musl64 echidna;
+            x86_64-windows = mkEchidna pkgs.pkgsCross.ucrt64 echidna;
           in (pkgs.lib.optionalAttrs (system == "x86_64-linux") {
             packages.echidna-aarch64-musl = aarch64-musl.echidna.components.exes.echidna;
             packages.echidna-x86_64-musl = x86_64-musl.echidna.components.exes.echidna;
