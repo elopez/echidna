@@ -24,12 +24,12 @@
           overlays = [
             haskellNix.overlay
             (final: prev: {
-              libff = prev.libff.overrideAttrs (oldAttrs: {
+              ff = (prev.libff.overrideAttrs (oldAttrs: {
                 # Apply Windows compatibility patch for clock_gettime
                 patches = (oldAttrs.patches or []) ++ prev.lib.optionals prev.stdenv.hostPlatform.isWindows [
                   ./nix/libff-mingw.patch
                 ];
-              });
+              })).override { enableStatic = prev.stdenv.hostPlatform.isMusl; };
             })
           ];
           # Also ensure we are using haskellNix config. Otherwise we won't be
@@ -37,16 +37,80 @@
           inherit (haskellNix) config;
         };
 
-        echidna = {
+        dependencies-static = with pkgs; [
+          (gmp.override { withStatic = true; })
+          (secp256k1.overrideAttrs (attrs: {
+            configureFlags = attrs.configureFlags ++ [ "--enable-static" ];
+          }))
+          (libff.override { enableStatic = true; })
+          (ncurses.override { enableStatic = true; })
+        ];
+
+        stripDylib = drv: pkgs.runCommand "${drv.name}-strip-dylibs" {} ''
+          mkdir -p $out
+          mkdir -p $out/lib
+          cp -r ${drv}/* $out/
+          rm -rf $out/**/*.dylib
+        '';
+
+        # "static" binary for distribution
+        # on macos this has everything except libcxx and libsystem
+        # statically linked. we can be confident that these two will always
+        # be provided in a well known location by macos itself.
+        echidnaDarwinRedistributable = let
+          grep = "${pkgs.gnugrep}/bin/grep";
+          otool = "${pkgs.darwin.binutils.bintools}/bin/otool";
+          install_name_tool = "${pkgs.darwin.binutils.bintools}/bin/install_name_tool";
+          codesign_allocate = "${pkgs.darwin.binutils.bintools}/bin/codesign_allocate";
+          codesign = "${pkgs.darwin.sigtool}/bin/codesign";
+        in ''
+          # rewrite /nix/... library paths to point to /usr/lib
+          exe="$out/bin/echidna"
+          chmod 777 "$exe"
+          for lib in $(${otool} -L "$exe" | awk '/nix\/store/{ print $1 }'); do
+            case "$lib" in
+              *libc++.*.dylib)    ${install_name_tool} -change "$lib" /usr/lib/libc++.dylib     "$exe" ;;
+              *libc++abi.*.dylib) ${install_name_tool} -change "$lib" /usr/lib/libc++abi.dylib  "$exe" ;;
+              *libffi.*.dylib)    ${install_name_tool} -change "$lib" /usr/lib/libffi.dylib     "$exe" ;;
+              *libiconv.2.dylib)  ${install_name_tool} -change "$lib" /usr/lib/libiconv.2.dylib "$exe" ;;
+              *libz.dylib)        ${install_name_tool} -change "$lib" /usr/lib/libz.dylib       "$exe" ;;
+            esac
+          done
+          # check that no nix deps remain
+          nixdeps=$(${otool} -L "$exe" | tail -n +2 | { ${grep} /nix/store -c || test $? = 1; })
+          if [ ! "$nixdeps" = "0" ]; then
+            echo "Nix deps remain in redistributable binary!"
+            #exit 255
+          fi
+          # re-sign binary
+          CODESIGN_ALLOCATE=${codesign_allocate} ${codesign} -f -s - "$exe"
+          chmod 555 "$exe"
+        '';
+
+        echidna' = { staticBuild ? false }: {
           inherit compiler-nix-name;
           src = pkgs.haskell-nix.haskellLib.cleanGit {
             name = "echidna";
             src = ./.;
           };
 
-          modules = [{
-            packages.hevm.components.library.libs = pkgs.lib.mkForce (with pkgs; [ libff secp256k1 ]);
-          }];
+          modules = [
+            (pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isWindows {
+              configureFlags = [
+                "--gcc-option=-Wno-error=int-conversion"
+              ];
+            })
+            (pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.isDarwin && staticBuild) {
+              packages.echidna.components.exes.echidna =
+                {
+                  enableShared = false;
+                  enableStatic = true;
+                  configureFlags = map (drv: "--extra-lib-dirs=${stripDylib drv}/lib") dependencies-static;
+                  postInstall = echidnaDarwinRedistributable;
+                };
+            })
+            #{ packages.hevm.components.library.libs = pkgs.lib.mkForce (with pkgs.evalPackages; [ libff secp256k1 ]); }
+          ];
 
           #crossPlatforms = p: (pkgs.lib.optionals pkgs.stdenv.hostPlatform.isx86_64 [
           #  p.ucrt64
@@ -56,12 +120,17 @@
           #]);
         };
 
+        echidna = echidna' {};
+        echidnaStatic = echidna' { staticBuild = true; };
+
         hsPkgs = pkgs.haskell-nix.project echidna;
+        hsStaticPkgs = pkgs.haskell-nix.project echidnaStatic;
         #flake = hsPkgs.flake {};
       in
         let
           nativePackages = {
             packages.echidna = hsPkgs.echidna.components.exes.echidna;
+            packages.echidna-redistributable = hsStaticPkgs.echidna.components.exes.echidna;
             defaultPackage = self.packages.${system}.echidna;
           };
 
@@ -74,8 +143,12 @@
             packages.echidna-aarch64-musl = aarch64-musl.echidna.components.exes.echidna;
             packages.echidna-x86_64-musl = x86_64-musl.echidna.components.exes.echidna;
             packages.echidna-x86_64-windows = x86_64-windows.echidna.components.exes.echidna;
+            # alias for musl build
+            packages.echidna-redistributable = x86_64-musl.echidna.components.exes.echidna;
           }) // (pkgs.lib.optionalAttrs (system == "aarch64-linux") {
             packages.echidna-aarch64-musl = aarch64-musl.echidna.components.exes.echidna;
+            # alias for musl build
+            packages.echidna-redistributable = aarch64-musl.echidna.components.exes.echidna;
           });
         
         in pkgs.lib.recursiveUpdate nativePackages linuxCrossPackages

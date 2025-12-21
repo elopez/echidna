@@ -1,4 +1,4 @@
-resolver: lts-23.24
+resolver: lts-23.28
 # matching https://github.com/NixOS/nixpkgs/blob/97eb7ee0da337d385ab015a23e15022c865be75c/pkgs/development/haskell-modules/configuration-hackage2nix/stackage.yaml#L1
 
 packages:
