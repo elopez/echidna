@@ -99,6 +99,7 @@ executables:
       - -threaded
       - -rtsopts
       - '"-with-rtsopts=-A64m -N"'
+      - -optl-s
     when:
       - condition: (os(linux) || os(windows)) && flag(static)
         ghc-options:
@@ -107,6 +108,7 @@ executables:
         ghc-options:
           - -O2
           - -optl-pthread
+          - -optl-Wl,--gc-sections
       - condition: os(darwin)
         ld-options: -Wl,-keep_dwarf_unwind
         ghc-options: -fcompact-unwind
